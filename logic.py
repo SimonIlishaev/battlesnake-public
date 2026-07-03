@@ -458,9 +458,9 @@ STANDARD_MOVE_FLOOD_CAP = 60
 # the closest nearby threat we hedge: branch over its top-K plausible moves
 # for the first few plies and assume it picks whichever is worst for us. This
 # is limited to one enemy and a couple of plies so the branching stays cheap.
-ADVERSARIAL_RADIUS = 4
+ADVERSARIAL_RADIUS = 5
 ADVERSARIAL_PLIES = 2
-ENEMY_BRANCH_TOP_K = 2
+ENEMY_BRANCH_TOP_K = 3
 
 # Leaf-evaluation bonus for squeezing a nearby enemy's reachable space down
 # toward (or below) its own length -- i.e. rewarding moves that we predict
@@ -824,7 +824,13 @@ def _score_standard_move(board: Board, sid: str, move: str, hazard_damage: int, 
         if len(enemy.body) >= projected_length:
             score -= 200_000.0
         else:
-            score += 3_000.0
+            # A real opponent facing a free kill on a shorter snake almost
+            # always takes it. This has to outweigh ordinary space/mobility
+            # deltas between candidate moves, or the predicted "standard"
+            # move for that opponent won't be the kill -- which then keeps
+            # it out of the adversarial hedge's top-K and we never see the
+            # danger coming.
+            score += 60_000.0
 
     health_after = s.health - 1
     if eats:
@@ -969,7 +975,14 @@ def _evaluate(board: Board, my_id: str, initial_enemy_count: int) -> float:
         distance = _manhattan(my_head, enemy_head)
         if distance == 1:
             if len(enemy.body) >= len(me.body):
-                score -= 100_000.0
+                # This has to dominate space/territory/mobility outright, not
+                # just outweigh them on average: those terms scale with the
+                # full board (up to width*height*1000+ for space alone), so a
+                # merely large penalty gets drowned out by an otherwise great
+                # -looking open position that's one bad turn from a lost
+                # head-to-head. Losing the game is far worse than losing
+                # territory, so the score reflects that.
+                score -= 2_000_000.0
             else:
                 score += 15_000.0
 

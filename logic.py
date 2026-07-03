@@ -101,16 +101,35 @@ def choose_move_heuristic(game_state: Dict) -> str:
     return best_move or "up"
 
 
-def _occupied_cells(snakes: List[Dict]) -> Set[Point]:
+def _is_tail_stacked(snake: Dict) -> bool:
+    """True if the snake just ate, so its tail won't move next turn.
+
+    The Battlesnake API duplicates the last body segment for one turn when a
+    snake eats (the tail doesn't retract on the turn the snake grows). A
+    stacked tail stays occupied next turn; otherwise the tail cell vacates.
+    """
+    body = snake["body"]
+    if len(body) < 2:
+        return False
+    return body[-1]["x"] == body[-2]["x"] and body[-1]["y"] == body[-2]["y"]
+
+
+def _occupied_cells(snakes: List[Dict], treat_tails_as_vacating: bool = False) -> Set[Point]:
     """All cells currently filled by any snake's body.
 
-    We keep tails occupied too; they only free up *next* turn and treating them
-    as solid is the conservative, safe choice for a base bot.
+    By default tails are kept occupied too; they only free up *next* turn and
+    treating them as solid is the conservative, safe choice for a base bot.
+    Pass ``treat_tails_as_vacating=True`` to instead exclude each snake's tail
+    cell unless it's stacked (see ``_is_tail_stacked``) — used by lookahead
+    evaluation, where the extra precision helps avoid phantom traps.
     """
     occupied: Set[Point] = set()
     for snake in snakes:
-        for seg in snake["body"]:
+        body = snake["body"]
+        for seg in body:
             occupied.add((seg["x"], seg["y"]))
+        if treat_tails_as_vacating and body and not _is_tail_stacked(snake):
+            occupied.discard((body[-1]["x"], body[-1]["y"]))
     return occupied
 
 
@@ -131,6 +150,11 @@ def _head_to_head_cells(snakes: List[Dict], my_id: str, my_length: int) -> Set[P
         for dx, dy in DIRECTIONS.values():
             danger.add((ehead[0] + dx, ehead[1] + dy))
     return danger
+
+
+def _hazard_cells(board: Dict) -> Set[Point]:
+    """Cells marked as hazards (extra health cost per turn in hazard game modes)."""
+    return {(h["x"], h["y"]) for h in board.get("hazards", [])}
 
 
 def _flood_fill(start: Point, occupied: Set[Point], width: int, height: int, limit: int) -> int:
